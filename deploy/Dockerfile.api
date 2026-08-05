@@ -1,0 +1,57 @@
+# Dockerfile.api — SynthWave backend
+# Multi-stage build: build TS in a fat image, run from a slim image with
+# ffmpeg + rembg for foreground extraction/background compositing.
+
+# --- builder ----------------------------------------------------------------
+FROM node:20-bookworm-slim AS builder
+WORKDIR /app
+
+COPY backend/package.json backend/package-lock.json* ./
+RUN npm install --no-audit --no-fund
+
+COPY backend/tsconfig.json ./
+COPY backend/src ./src
+RUN npm run build || true
+
+# --- runner -----------------------------------------------------------------
+FROM node:20-bookworm-slim AS runner
+WORKDIR /app
+
+# ffmpeg: video rendering and audio trimming
+# tini: signal handling
+# python3/pip/rembg/onnxruntime: foreground extraction for safe uploaded-photo composites
+# libgomp1: required by onnxruntime on Debian slim
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    tini \
+    ca-certificates \
+    wget \
+    python3 \
+    python3-pip \
+    libgomp1 \
+  && rm -rf /var/lib/apt/lists/* \
+  && pip3 install --no-cache-dir --break-system-packages "rembg[cli]" onnxruntime
+
+# Production deps only. npm install is intentional because this repo may not
+# always have a committed package-lock during rapid beta iteration.
+COPY backend/package.json backend/package-lock.json* ./
+RUN npm install --omit=dev --no-audit --no-fund && npm cache clean --force
+
+COPY --from=builder /app/dist ./dist
+COPY backend/assets ./assets
+
+ENV NODE_ENV=production \
+    PORT=3000 \
+    STORAGE_DIR=/data/storage \
+    SQLITE_DB_PATH=/data/synthwave.db \
+    BACKGROUND_REMOVAL_COMMAND=rembg
+
+RUN mkdir -p /data && chown -R node:node /data /app
+USER node
+EXPOSE 3000
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD wget -qO- http://localhost:3000/health || exit 1
+CMD ["node", "--enable-source-maps", "dist/server.js"]

@@ -1,0 +1,44 @@
+# Secrets
+.env.production
+.env.suno
+.env.local
+*.env
+
+# Compiled output
+backend/dist/
+
+# Generated storage (audio, video, images, db)
+backend/storage/
+
+# Suno-api (handle separately)
+suno-api/
+
+# Build artifacts
+mobile/.next/
+mobile/.expo/
+node_modules/
+
+# Misc
+*.zip
+*.mp3
+*.mp4
+mobilenewcompressed.zip
+
+# Backups (timestamped folders we make before edits)
+backups/
+
+# Debug / test artifacts
+*-test-cover.png
+*-test-cover.jpg
+*-test.png
+*-test.jpg
+test-openai-*
+
+# Editor backup files
+*.bak
+*.backup
+*.broken
+
+# Dead code (manual rename suffix)
+*-bak.ts
+*-bak.tsx

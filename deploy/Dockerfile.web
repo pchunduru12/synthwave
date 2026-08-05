@@ -1,0 +1,30 @@
+# Dockerfile.web — SynthWave web bundle
+# Builds the Expo web export. The bundle is then served by Caddy from a shared volume.
+# We don't run a webserver in this container — the build is the artifact.
+
+FROM node:20-alpine AS builder
+WORKDIR /app
+
+COPY mobile/package.json mobile/package-lock.json* ./
+RUN npm ci --no-audit --no-fund
+
+COPY mobile/ ./
+
+# The API base URL has to be baked in at build time because Expo bundles env vars
+# prefixed with EXPO_PUBLIC_ into the static JS. Override at build time:
+#   docker build --build-arg EXPO_PUBLIC_API_BASE_URL=https://your-domain ...
+ARG EXPO_PUBLIC_API_BASE_URL=https://your-domain.example.com
+ENV EXPO_PUBLIC_API_BASE_URL=$EXPO_PUBLIC_API_BASE_URL
+
+RUN npx expo export --platform web --output-dir dist
+
+# --- final stage: copy bundle to a shared volume that Caddy mounts ---
+FROM alpine:3.20 AS final
+RUN apk add --no-cache ca-certificates
+WORKDIR /bundle
+COPY --from=builder /app/dist ./
+
+# On startup: copy the freshly-built bundle into the shared volume that Caddy
+# also mounts. This lets you `docker compose up -d --build web` to deploy a new
+# UI without restarting Caddy.
+CMD ["sh", "-c", "rm -rf /srv/web/* && cp -r /bundle/. /srv/web/ && echo 'web bundle deployed' && tail -f /dev/null"]

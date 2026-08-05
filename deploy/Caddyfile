@@ -1,0 +1,57 @@
+# Caddyfile — SynthWave reverse proxy
+#
+# Replace "your-domain.example.com" with your actual domain. Caddy will
+# automatically obtain and renew Let's Encrypt certs as long as your
+# DNS A record points at this VPS and ports 80/443 are open.
+#
+# To use a different domain, set DOMAIN in .env.production and reference {$DOMAIN} below,
+# OR just hardcode it.
+
+{$DOMAIN:your-domain.example.com} {
+    encode zstd gzip
+
+    # Security headers
+    header {
+        # HSTS — once set, browsers will refuse plain HTTP for this host.
+        # Don't enable until you're confident TLS is working.
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "DENY"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        # Don't leak the Caddy version
+        -Server
+    }
+
+    # API endpoints proxy to the api container.
+    # Note: order matters — most specific path first.
+    @api {
+        path /v1/* /artifacts/* /health
+    }
+    handle @api {
+        reverse_proxy api:3000 {
+            # Pass real client IP so express-rate-limit and access logs see it.
+            header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-For {remote_host}
+            header_up X-Forwarded-Proto {scheme}
+        }
+    }
+
+    # Everything else is the SPA. Try the file, otherwise serve index.html
+    # so client-side routes (e.g. /creation/abc123) work on direct loads.
+    handle {
+        root * /srv/web
+        try_files {path} /index.html
+        file_server
+    }
+
+    # Access logs in JSON. Comment out if you don't want them.
+    log {
+        output stdout
+        format json
+    }
+}
+
+# Optional: redirect bare apex to www, or vice versa. Uncomment and edit if needed.
+# www.your-domain.example.com {
+#     redir https://your-domain.example.com{uri}
+# }

@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "SynthWave",
+    "slug": "synthwave-option-b",
+    "scheme": "synthwaveoptionb",
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "web": {
+      "bundler": "metro",
+      "name": "SynthWave — AI music videos",
+      "shortName": "SynthWave",
+      "description": "Create AI music videos in seconds. Lyrics, cover art, song, and video — generated end to end.",
+      "themeColor": "#ff2d95",
+      "backgroundColor": "#0a0612"
+    }
+  }
+}

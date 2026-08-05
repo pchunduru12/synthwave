@@ -1,0 +1,69 @@
+services:
+  api:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.api
+    container_name: synthwave_api
+    restart: unless-stopped
+    env_file: ../.env.production
+    environment:
+      NODE_ENV: production
+      PORT: "3000"
+      STORAGE_DIR: /data/storage
+      SQLITE_DB_PATH: /data/synthwave.db
+    volumes:
+      - synthwave_data:/data
+    expose:
+      - "3000"
+    depends_on:
+      - suno
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  suno:
+    build:
+      context: ../suno-api
+      dockerfile: Dockerfile
+    container_name: synthwave_suno
+    restart: unless-stopped
+    env_file: ../.env.suno
+    expose:
+      - "3000"
+    shm_size: 1gb
+
+  web:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.web
+      args:
+        EXPO_PUBLIC_API_BASE_URL: ${WEB_API_BASE_URL}
+    container_name: synthwave_web
+    restart: unless-stopped
+    volumes:
+      - synthwave_web:/srv/web
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: synthwave_caddy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - synthwave_web:/srv/web:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - api
+      - web
+
+volumes:
+  synthwave_data:
+  synthwave_web:
+  caddy_data:
+  caddy_config:
