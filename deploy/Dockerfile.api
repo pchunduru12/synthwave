@@ -3,18 +3,18 @@
 # ffmpeg + rembg for foreground extraction/background compositing.
 
 # --- builder ----------------------------------------------------------------
-FROM node:20-bookworm-slim AS builder
+FROM node:24-bookworm-slim AS builder
 WORKDIR /app
 
 COPY backend/package.json backend/package-lock.json* ./
-RUN npm install --no-audit --no-fund
+RUN npm ci --no-audit --no-fund
 
 COPY backend/tsconfig.json ./
 COPY backend/src ./src
-RUN npm run build || true
+RUN npm run build
 
 # --- runner -----------------------------------------------------------------
-FROM node:20-bookworm-slim AS runner
+FROM node:24-bookworm-slim AS runner
 WORKDIR /app
 
 # ffmpeg: video rendering and audio trimming

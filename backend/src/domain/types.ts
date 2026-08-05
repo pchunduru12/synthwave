@@ -125,6 +125,8 @@ export interface Creation {
   estimatedCostUsd: number;
   reservedCostUsd: number;
   actualCostUsd: number;
+  /** Set once the unused reservation has been refunded (completion, failure, or cancel). Prevents double refunds. */
+  refundSettledAt?: string;
   pipelineStages: PipelineStage[];
   createdAt: string;
   updatedAt: string;

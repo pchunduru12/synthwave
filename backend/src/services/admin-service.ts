@@ -12,9 +12,21 @@ import { env } from '../config/env.js';
 import { memoryStore, persistMemoryStore } from '../data/memory-store.js';
 import { Creation, User } from '../domain/types.js';
 
-const ADMIN_DIR = path.join(env.storageDir, 'admin');
+// SECURITY: admin data lives in the private dir, never under the publicly-served
+// storage dir. Migrate any legacy files from the old (public) location.
+const ADMIN_DIR = path.join(env.privateDir, 'admin');
 const INVITES_FILE = path.join(ADMIN_DIR, 'invites.json');
 const DISABLED_FILE = path.join(ADMIN_DIR, 'disabled-users.json');
+
+{
+  const legacyAdminDir = path.join(env.storageDir, 'admin');
+  if (fs.existsSync(legacyAdminDir) && !fs.existsSync(ADMIN_DIR)) {
+    fs.mkdirSync(path.dirname(ADMIN_DIR), { recursive: true });
+    fs.renameSync(legacyAdminDir, ADMIN_DIR);
+    // eslint-disable-next-line no-console
+    console.warn(`[migrate] moved admin data out of the public storage dir: ${legacyAdminDir} -> ${ADMIN_DIR}`);
+  }
+}
 
 let invitesCache: Set<string> | null = null;
 let disabledCache: Set<string> | null = null;
@@ -89,7 +101,9 @@ function persistDisabled() {
 
 export function isEmailInvited(email: string): boolean {
   const allowList = loadInvites();
-  if (allowList.size === 0) return true;
+  // SECURITY: fail CLOSED. An empty invite list rejects everyone unless the
+  // operator explicitly opted into open registration.
+  if (allowList.size === 0) return env.allowOpenRegistration;
   return allowList.has(email.toLowerCase());
 }
 

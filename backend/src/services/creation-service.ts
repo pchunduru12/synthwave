@@ -82,6 +82,15 @@ export function createCreation(user: User, input: CreationInput, userImage?: Pen
     burnLyrics: input.burnLyrics === true,
   };
 
+  // SECURITY/cost guard: enforce the configured concurrency limit for real.
+  // Global cap from MAX_CONCURRENT_CREATIONS, plus at most 1 running job per user.
+  if (activePipelines >= env.maxConcurrentCreations) {
+    throw new HttpError(429, 'busy', 'Server is at capacity. Please try again in a minute.');
+  }
+  if (activeByUser.get(user.id)) {
+    throw new HttpError(429, 'busy', 'You already have a creation in progress. Wait for it to finish or cancel it.');
+  }
+
   const estimate = estimateCreationCost(sanitizedInput);
   assertBudgetAllowsReserve(user.id, estimate.totalUsd);
 
@@ -115,7 +124,12 @@ export function createCreation(user: User, input: CreationInput, userImage?: Pen
     costUsd: estimate.totalUsd,
   });
 
-  void runPipeline(creation.id);
+  activePipelines += 1;
+  activeByUser.set(user.id, true);
+  void runPipeline(creation.id).finally(() => {
+    activePipelines = Math.max(0, activePipelines - 1);
+    activeByUser.delete(user.id);
+  });
   return creation;
 }
 
@@ -133,12 +147,43 @@ export function getCreation(userId: string, creationId: string) {
   return creation;
 }
 
+// In-process concurrency tracking (single-server). A restart resets these,
+// which is safe: pipelines don't survive restarts either.
+let activePipelines = 0;
+const activeByUser = new Map<string, boolean>();
+
+/**
+ * Settle the budget for a creation exactly once: refund whatever part of the
+ * reservation was not actually spent. Runs when the pipeline ends for ANY
+ * reason (completed, failed, or cancelled). SECURITY: refunds must never be
+ * issued while provider work may still be running — that allowed cancelling
+ * a job to reclaim budget while the provider still billed us.
+ */
+function settleCreationBudget(creation: Creation) {
+  if (creation.refundSettledAt) return;
+  creation.refundSettledAt = nowIso();
+
+  const refundUsd = Math.max(0, roundUsd(creation.reservedCostUsd - creation.actualCostUsd));
+  if (refundUsd > 0) {
+    recordUsage({
+      userId: creation.userId,
+      creationId: creation.id,
+      category: 'refund',
+      provider: 'internal',
+      model: 'budget-guard',
+      costUsd: -refundUsd,
+    });
+  }
+  persistMemoryStore();
+}
+
 export function cancelCreation(userId: string, creationId: string) {
   const creation = getCreation(userId, creationId);
   if (creation.status === 'completed') {
     throw new HttpError(409, 'already_completed');
   }
 
+  const wasTerminal = creation.status === 'failed';
   creation.status = 'cancelled';
   creation.updatedAt = nowIso();
   creation.pipelineStages = creation.pipelineStages.map((stage) =>
@@ -148,16 +193,12 @@ export function cancelCreation(userId: string, creationId: string) {
   );
   persistMemoryStore();
 
-  const refundUsd = Math.max(0, creation.reservedCostUsd - creation.actualCostUsd);
-  if (refundUsd > 0) {
-    recordUsage({
-      userId,
-      creationId,
-      category: 'refund',
-      provider: 'internal',
-      model: 'budget-guard',
-      costUsd: -refundUsd,
-    });
+  // SECURITY: do NOT refund here. If the pipeline is still running, it settles
+  // the refund in its finally block after in-flight provider costs are recorded.
+  // If the pipeline already ended (e.g. status was 'failed'), settlement has
+  // already happened and settleCreationBudget() is an idempotent no-op.
+  if (wasTerminal) {
+    settleCreationBudget(creation);
   }
 
   cleanupUserImage(creationId);
@@ -377,6 +418,11 @@ async function runPipeline(creationId: string) {
       markRunningStageFailed(creation, failureMessage);
       persistMemoryStore();
     }
+  } finally {
+    // Settle exactly once, after all provider costs for this run are recorded.
+    // Also fixes budget double-counting: completed jobs previously never
+    // released the unused part of their reservation.
+    settleCreationBudget(creation);
   }
 }
 
@@ -431,10 +477,10 @@ async function finishStage(
     totalTokens?: number;
   },
 ) {
-  if (isCreationCancelled(creation)) {
-    throw new Error('cancelled');
-  }
-
+  // NOTE: the cancellation check is intentionally at the END of this function.
+  // If the user cancelled while a provider call was in flight, that cost was
+  // still incurred and MUST be recorded before the pipeline unwinds; otherwise
+  // cancel-during-generation reclaimed budget for money actually spent.
   const stage = getStage(creation, stageId);
   stage.status = 'done';
   stage.progress = 100;
@@ -482,6 +528,10 @@ async function finishStage(
     outputTokens: tokenUsage?.outputTokens,
     totalTokens: tokenUsage?.totalTokens,
   });
+
+  if (isCreationCancelled(creation)) {
+    throw new Error('cancelled');
+  }
 }
 
 function getStage(creation: Creation, stageId: StageId) {

@@ -2,7 +2,7 @@
 # Builds the Expo web export. The bundle is then served by Caddy from a shared volume.
 # We don't run a webserver in this container — the build is the artifact.
 
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 WORKDIR /app
 
 COPY mobile/package.json mobile/package-lock.json* ./

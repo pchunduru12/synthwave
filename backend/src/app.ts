@@ -111,6 +111,22 @@ export function createApp() {
   });
 
   // Static artifact serving. We allow CORS here too because the web app fetches them via <img>/<audio>/<video>.
+  // SECURITY guard: even though the DB and admin files now live outside STORAGE_DIR,
+  // defensively refuse to serve anything that looks private (dotfiles, DBs, admin/private dirs).
+  app.use('/artifacts', (req, res, next) => {
+    const decoded = decodeURIComponent(req.path).toLowerCase();
+    const blocked =
+      decoded.includes('..') ||
+      decoded.includes('/.') ||
+      decoded.startsWith('/admin/') || decoded === '/admin' ||
+      decoded.startsWith('/private/') || decoded === '/private' ||
+      decoded.endsWith('.db') || decoded.endsWith('.sqlite') || decoded.endsWith('.env');
+    if (blocked) {
+      res.status(404).json({ error: 'not_found' });
+      return;
+    }
+    next();
+  });
   app.use('/artifacts', express.static(env.storageDir, {
     setHeaders: (res) => {
       // Caddy will further restrict via CORS headers if needed; be permissive here so media tags work.

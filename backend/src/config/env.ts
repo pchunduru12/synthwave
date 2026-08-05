@@ -1,9 +1,25 @@
 // backend/src/config/env.ts — drop-in replacement
 import 'dotenv/config';
+import fs from 'node:fs';
 import path from 'node:path';
 
 const rootDir = process.cwd();
 const defaultStorageDir = process.env.STORAGE_DIR || path.join(rootDir, 'storage');
+
+// SECURITY: files that must never be publicly served (DB, admin lists) live here,
+// OUTSIDE the publicly-served STORAGE_DIR. Override with PRIVATE_DIR.
+const defaultPrivateDir = process.env.PRIVATE_DIR || path.join(rootDir, 'private');
+fs.mkdirSync(defaultPrivateDir, { recursive: true });
+
+// One-time migration: older installs kept the SQLite DB inside STORAGE_DIR
+// (publicly served!). If the old default file exists and the new one doesn't, move it.
+const legacyDbPath = path.join(defaultStorageDir, 'synthwave.db');
+const newDefaultDbPath = path.join(defaultPrivateDir, 'synthwave.db');
+if (!process.env.SQLITE_DB_PATH && fs.existsSync(legacyDbPath) && !fs.existsSync(newDefaultDbPath)) {
+  fs.renameSync(legacyDbPath, newDefaultDbPath);
+  // eslint-disable-next-line no-console
+  console.warn(`[migrate] moved SQLite DB out of the public storage dir: ${legacyDbPath} -> ${newDefaultDbPath}`);
+}
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -71,7 +87,13 @@ export const env = {
 
   // Persistence
   storageDir: defaultStorageDir,
-  sqliteDbPath: process.env.SQLITE_DB_PATH || path.join(defaultStorageDir, 'synthwave.db'),
+  privateDir: defaultPrivateDir,
+  sqliteDbPath: process.env.SQLITE_DB_PATH || path.join(defaultPrivateDir, 'synthwave.db'),
+
+  // Registration policy. SECURITY: an empty invite list now REJECTS everyone
+  // (fail closed). Set ALLOW_OPEN_REGISTRATION=true only if you intentionally
+  // want public sign-ups.
+  allowOpenRegistration: String(process.env.ALLOW_OPEN_REGISTRATION || 'false').toLowerCase() === 'true',
 
   // Pipeline
   ffmpegPath: process.env.FFMPEG_PATH || 'ffmpeg',
@@ -122,4 +144,16 @@ export const env = {
 if (env.isProd && env.corsOrigins.length === 0 && !env.webOrigin) {
   // eslint-disable-next-line no-console
   console.warn('[warn] No WEB_ORIGIN or CORS_ORIGINS set in production — API will reject all browser requests.');
+}
+
+// SECURITY startup guard: refuse to run if the SQLite DB resolves inside the
+// publicly-served storage directory (it would be downloadable at /artifacts/...).
+{
+  const dbResolved = path.resolve(env.sqliteDbPath);
+  const storageResolved = path.resolve(env.storageDir) + path.sep;
+  if (dbResolved.startsWith(storageResolved)) {
+    // eslint-disable-next-line no-console
+    console.error(`[fatal] SQLITE_DB_PATH (${dbResolved}) is inside the public STORAGE_DIR (${storageResolved}). Move it (e.g. PRIVATE_DIR) — refusing to start.`);
+    process.exit(1);
+  }
 }

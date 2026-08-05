@@ -28,13 +28,13 @@ export const IMAGE_MODELS = [
 
 export const registerSchema = z.object({
   email: z.string().email().max(255),
-  password: z.string().min(8).regex(/[0-9!@#$%^&*]/, 'Must include a number or symbol'),
+  password: z.string().min(8).max(128).regex(/[0-9!@#$%^&*]/, 'Must include a number or symbol'),
   displayName: z.string().min(2).max(100),
 });
 
 export const loginSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(1),
+  password: z.string().min(1).max(128),
 });
 
 export const creationSchema = z.object({
