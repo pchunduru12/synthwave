@@ -2,6 +2,32 @@
 
 An AI music generation app you can run yourself: describe a song, and SynthWave generates the title, lyrics, cover art, and music — then renders it as a playable track or video. Bring your own domain and API keys; everything runs on your own infrastructure.
 
+## Project Team
+
+SynthWave was conceived and developed as a collaborative AI application project.
+
+### Padmaja Chunduru — Product & Functional Lead
+
+- Conceived the SynthWave product and its core use cases
+- Defined functional requirements and product direction
+- Provided recommendations for features, workflows, and user experience
+- Directed the application's AI music-generation capabilities and functional evolution
+- Performed functional review and provided iterative feedback throughout development
+
+### [Shashank (@shashankn165)](https://github.com/shashankn165) — Technical Lead & Lead Developer
+
+- Led the technical design and implementation of the SynthWave application
+- Developed the application frontend and user experience
+- Implemented Python-based integrations connecting the application with multiple LLM and generative AI services
+- Built and integrated the technical components required for the AI generation workflow
+- Set up and configured the production environment on DigitalOcean
+- Configured the application domain and deployment infrastructure
+- Led technical troubleshooting, integration, deployment, and application engineering
+
+SynthWave combines Padmaja's product vision and functional direction with Shashank's technical engineering, integration, and deployment work.
+
+See [CONTRIBUTORS.md](CONTRIBUTORS.md) for additional contribution details.
+
 ## What it does
 
 - **Prompt to song** — a short description (mood, theme, language, style) becomes a complete creation: title, lyrics, cover image, and generated audio
